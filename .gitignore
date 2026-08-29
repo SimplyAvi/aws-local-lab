@@ -21,6 +21,9 @@ integration/.snapshots/
 __pycache__/
 *.pyc
 
+# lab-diagnostics: local diagnostics bundles
+diagnostics/
+
 # lab-terraform (FR-2)
 terraform/.bin/
 .terraform.tfstate.lock.info
