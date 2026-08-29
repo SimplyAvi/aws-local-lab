@@ -13,10 +13,10 @@ concurrency:
 permissions:
   contents: read
 
+# NO_TOKEN is passed explicitly only to `make up` / `make reset` - it must NOT be
+# a global env var: it also flips $(COMPOSE) to layer the root compose files, which
+# breaks the relative build contexts in integration/ compose files run via `make`.
 env:
-  # Pinned, tokenless LocalStack (see docs/foundation.md). Nothing here needs a
-  # paid tier or an auth token.
-  NO_TOKEN: "1"
   TF_VERSION: "1.5.7"
 
 jobs:
