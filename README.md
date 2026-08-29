@@ -272,11 +272,85 @@ Delivered in two waves. Wave 2 depends on `lab-core` landing first, then runs in
 
 ## 10. Getting started
 
-Filled in by `lab-core`. The intended shape:
+Delivered by `lab-core` (FR-1). Deeper reference: [`docs/foundation.md`](docs/foundation.md).
+
+### 10.1 Prerequisites
+
+- **Docker** with Compose v2 (`docker compose ...`). Nothing else is required for
+  the no-token path.
+- Optional: **`jq`** for a formatted `make status` table (raw JSON without it).
+- Optional: a **free LocalStack auth token** from
+  [app.localstack.cloud](https://app.localstack.cloud) -> Auth Tokens, for token mode.
+
+### 10.2 No-token path (works with zero setup)
 
 ```sh
-cp .env.example .env         # add LOCALSTACK_AUTH_TOKEN, or use the no-token override
-make up                      # start LocalStack + create the shared network
-make status                  # service availability table
-make reset                   # wipe back to clean
+cp .env.example .env         # defaults are fine as-is
+make up NO_TOKEN=1           # creates the aws-local-lab network + boots the pinned
+                             #   pre-2026 community image (localstack/localstack:3.8.1)
+make status                  # service -> state table
+bin/awslocal s3 mb s3://smoke && bin/awslocal s3 ls
+make reset NO_TOKEN=1        # stop + wipe volume + prune network
 ```
+
+### 10.3 Token path (default)
+
+```sh
+cp .env.example .env
+# edit .env: set LOCALSTACK_AUTH_TOKEN=<your free-tier token>
+make up                      # boots the current image (localstack/localstack:4.9.0)
+make status
+```
+
+`make up` alone uses token mode; `LOCALSTACK_AUTH_TOKEN` is read from `.env`. If
+that variable is set in your shell environment, token mode picks it up too - the
+only difference from the no-token path is the image tag and that Pro-tier
+services become reachable.
+
+### 10.4 Everyday targets
+
+| Target | Does |
+|---|---|
+| `make up` / `make up NO_TOKEN=1` | Create the external network, start LocalStack, wait for the edge, print status. |
+| `make down` | Stop containers, keep the volume. |
+| `make restart` | `down` then `up`. |
+| `make logs` / `make ps` | Follow logs / show compose status. |
+| `make status` | Run `bin/health-check.sh` against `/_localstack/health`. |
+| `make reset` | Stop, remove the `aws-local-lab-data` volume, prune the network. |
+| `make shell` | Shell into the container. |
+| `make awslocal ARGS="s3 ls"` | AWS CLI against the lab. |
+
+Knobs live in `.env` (`PERSISTENCE=1`, `SERVICES=s3,dynamodb,...`, `EDGE_PORT`,
+`LOCALSTACK_IMAGE`, ...) - each documented inline in `.env.example`.
+
+### 10.5 Point another project at the lab
+
+Full integration kit comes in `lab-integration` (FR-4). The short version:
+
+```yaml
+# other project's docker-compose.yml
+networks:
+  aws-local-lab:
+    external: true
+services:
+  app:
+    networks: [aws-local-lab]
+    environment:
+      AWS_ENDPOINT_URL: http://aws-local-lab:4566   # container-to-container
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+```
+
+From the host, use `http://localhost:4566` (or `bin/awslocal`).
+
+### 10.6 Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `LOCALSTACK_AUTH_TOKEN` / activation errors on `make up` | Use `make up NO_TOKEN=1`, or put a valid free-tier token in `.env`. The no-token path never contacts LocalStack's API. |
+| `Bind for 0.0.0.0:4566 failed: port is already allocated` | Another process/container holds 4566. Stop it, or set `EDGE_PORT=4599` in `.env` (and export `LAB_ENDPOINT=http://localhost:4599` for `bin/awslocal`). |
+| `permission denied` on `/var/run/docker.sock` | Your user must be able to reach the Docker socket (Docker Desktop: ensure it's running; Linux: add yourself to the `docker` group and re-login). |
+| First `make up` is slow | Initial image pull is ~300 MB. Later boots take a few seconds. Narrow `SERVICES` in `.env` to speed eager loading. |
+| `make status` prints raw JSON | Install `jq` for the formatted table. |
+| State lost after `make restart` | Set `PERSISTENCE=1` in `.env`. `make reset` always wipes regardless. |
