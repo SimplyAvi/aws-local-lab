@@ -30,6 +30,21 @@ This file is the project's committed home for project-intrinsic agent knowledge:
   `AWS_ENDPOINT_URL`, presigned-URL host rewrite, `_user_request_` URL format) are
   documented in `examples/serverless-crud/README.md` - read that before changing it.
 
+## Integration kit + load harness (FR-4 / FR-5, `integration/`)
+
+- Everything is containerised and joins the external `aws-local-lab` network; no
+  host tooling beyond Docker. See [`integration/README.md`](integration/README.md)
+  and [`integration/load-harness/README.md`](integration/load-harness/README.md).
+- `make integrate-smoke` (Python + Node example containers), `make lab-seed`
+  (regression baseline), `make load-up|load-run|load-fault|load-down`.
+- Community LocalStack does **not** durably persist S3/DynamoDB across restarts
+  (Pro-only). Regression baseline is wipe + `lab-seed`, not snapshot/restore.
+- Traefik pinned at `v3.6` - `v3.3` fails to talk to Docker Desktop's daemon
+  (Docker 29 API). Docker Desktop does not auto-restart a `pumba kill`ed
+  container; re-run `make load-up` to restore replica count.
+- If host port 4566 is busy (parallel lab instances), pass `EDGE_PORT=<port>`
+  to every `make` target; in-network clients always use `aws-local-lab:4566`.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

@@ -1,0 +1,28 @@
+# aws-local-lab :: integration smoke
+# Runs the Python and Node client examples as containers on the shared lab
+# network, hitting LocalStack at http://aws-local-lab:4566. Driven by
+# `make integrate-smoke`.
+name: aws-local-lab-integrate-smoke
+
+services:
+  python-smoke:
+    build: ./python
+    environment:
+      AWS_ENDPOINT_URL: http://aws-local-lab:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+    networks: [aws-local-lab]
+
+  node-smoke:
+    build: ./node
+    environment:
+      AWS_ENDPOINT_URL: http://aws-local-lab:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+    networks: [aws-local-lab]
+
+networks:
+  aws-local-lab:
+    external: true
