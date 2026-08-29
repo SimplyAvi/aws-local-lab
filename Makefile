@@ -70,3 +70,15 @@ awslocal: ## Run the AWS CLI against the lab: make awslocal ARGS="s3 ls"
 # >>> sibling-track targets (lab-terraform / lab-sampleapp / lab-integration)
 # Add track-specific targets below this line, each in its own block.
 # ======================================================================
+
+# --- lab-sampleapp (FR-3): end-to-end serverless CRUD sample -------------
+.PHONY: sample-deploy sample-test sample-destroy
+
+sample-deploy: ## Deploy the examples/serverless-crud sample to the lab
+	@./examples/serverless-crud/deploy.sh
+
+sample-test: ## Run the serverless-crud end-to-end test (needs sample-deploy)
+	@python3 examples/serverless-crud/test/e2e_test.py
+
+sample-destroy: ## Tear down the serverless-crud sample
+	@./examples/serverless-crud/destroy.sh

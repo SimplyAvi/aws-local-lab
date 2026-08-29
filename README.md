@@ -354,3 +354,23 @@ From the host, use `http://localhost:4566` (or `bin/awslocal`).
 | First `make up` is slow | Initial image pull is ~300 MB. Later boots take a few seconds. Narrow `SERVICES` in `.env` to speed eager loading. |
 | `make status` prints raw JSON | Install `jq` for the formatted table. |
 | State lost after `make restart` | Set `PERSISTENCE=1` in `.env`. `make reset` always wipes regardless. |
+
+## 11. Sample application (FR-3, `lab-sampleapp`)
+
+`examples/serverless-crud/` is a copyable end-to-end serverless app deployed to the
+lab: API Gateway (REST) -> Lambda -> DynamoDB for a "notes" resource, plus an S3
+presigned-upload flow and an SQS + worker-Lambda event path.
+
+| Target | Does |
+|---|---|
+| `make sample-deploy` | Create every resource via `bin/awslocal`; writes `examples/serverless-crud/.stack.env`. |
+| `make sample-test` | End-to-end regression check (stdlib Python, asserts behaviour; non-zero exit on failure). |
+| `make sample-destroy` | Tear it all down. |
+
+```bash
+make up NO_TOKEN=1 && make sample-deploy && make sample-test
+```
+
+Pass `EDGE_PORT=<port>` to all three if 4566 is taken. Details, the architecture
+diagram, and the LocalStack quirks it works around are in
+[`examples/serverless-crud/README.md`](examples/serverless-crud/README.md).
