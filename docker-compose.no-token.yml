@@ -1,17 +1,19 @@
 # aws-local-lab :: no-token override
 #
-# Runs a pinned pre-2026 LocalStack community image that needs NO auth token.
-# Use when you have no free-tier token (fresh machine, CI, validation).
+# Pins localstack/localstack:4.14.0 and forces LOCALSTACK_AUTH_TOKEN blank -
+# the last LocalStack release that boots with NO auth token. This is the same
+# image docker-compose.yml defaults to; this override just guarantees the
+# tokenless path (fresh machine, CI, validation).
 #
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.no-token.yml up -d
 #   make up NO_TOKEN=1
 #
-# The pin (localstack/localstack:3.8.1) is the last community line that runs
-# fully offline with no token prompt - see docs/foundation.md.
+# The pin (localstack/localstack:4.14.0) is the last LocalStack release that
+# boots fully offline with no auth token - see docs/foundation.md.
 services:
   localstack:
-    image: localstack/localstack:3.8.1
+    image: localstack/localstack:4.14.0
     environment:
-      # Explicitly blank - the 3.x community image ignores it, kept for clarity.
+      # Explicitly blank - the community image ignores it, kept for clarity.
       - LOCALSTACK_AUTH_TOKEN=

@@ -1,21 +1,24 @@
 # aws-local-lab :: FR-1 core stack
-# LocalStack in token mode (default). See docker-compose.no-token.yml for the
-# pinned pre-2026 community image that runs with no auth token.
+# Default image is localstack/localstack:4.14.0 - the last release that boots
+# with no auth token (community service set, ~30 services). To reach the Pro
+# service set, set LOCALSTACK_IMAGE=localstack/localstack:latest plus a PAID
+# LOCALSTACK_AUTH_TOKEN in .env (a free "Hobby" token unlocks nothing extra).
 #
 # Image tags are pinned deliberately - see docs/foundation.md.
 services:
   localstack:
     container_name: aws-local-lab
-    # Token mode default: current LocalStack image (2026 free tier, auth-token based).
-    # Override with LOCALSTACK_IMAGE in .env; no-token override lives in
-    # docker-compose.no-token.yml.
-    image: ${LOCALSTACK_IMAGE:-localstack/localstack:4.9.0}
+    # Default: last tokenless LocalStack release. Override with LOCALSTACK_IMAGE
+    # in .env for the paid Pro image; docker-compose.no-token.yml pins the same
+    # 4.14.0 and forces the token blank.
+    image: ${LOCALSTACK_IMAGE:-localstack/localstack:4.14.0}
     ports:
       # Host edge port (EDGE_PORT, default 4566). Override only if 4566 is taken.
       - "127.0.0.1:${EDGE_PORT:-4566}:4566"
       - "127.0.0.1:4510-4559:4510-4559"  # external service ports (Lambda, etc.)
     environment:
-      # Free-tier auth token; read from .env. Empty in no-token mode.
+      # Optional PAID auth token; read from .env. Empty by default and on the
+      # no-token path. A free token adds no services - see docs/foundation.md.
       - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN:-}
       # Empty = eager-load all community services. Narrow for faster boot.
       - SERVICES=${SERVICES:-}

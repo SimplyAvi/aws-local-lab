@@ -6,12 +6,18 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 ## Foundation (FR-1, `lab-core`)
 
-- Core stack: `docker-compose.yml` (token mode, `localstack/localstack:4.9.0`) +
-  `docker-compose.no-token.yml` (pinned `3.8.1`, no token). Drive it all via the
-  `Makefile`; `make up NO_TOKEN=1` for the offline path.
+- Core stack: `docker-compose.yml` and `docker-compose.no-token.yml` both pin
+  `localstack/localstack:4.14.0` (last tokenless release). Paid Pro is opt-in:
+  `LOCALSTACK_IMAGE=localstack/localstack:latest` + a paid `LOCALSTACK_AUTH_TOKEN`.
+  Drive it all via the `Makefile`; `make up NO_TOKEN=1` forces the token blank.
 - Pinned tags, the `/_localstack/health` contract, and the network/volume names
   are recorded in [`docs/foundation.md`](docs/foundation.md) - read that before
   building on the lab.
+- [`docs/fidelity-matrix.md`](docs/fidelity-matrix.md) is the authoritative
+  "what works locally" reference (free/community vs paid, data-plane vs
+  control-plane vs none). A free LocalStack token unlocks nothing beyond the
+  community image; default pin is `localstack/localstack:4.14.0` (last tokenless
+  release). ELBv2/ECS/ECR/EKS/ASG/RDS/ElastiCache/Cognito are paid-tier only.
 - External Docker network `aws-local-lab` and named volume `aws-local-lab-data`
   are the integration seams. `make up` creates the network; `make reset` wipes both.
 - Sibling tracks add Makefile targets below the `>>> sibling-track targets`
@@ -37,8 +43,10 @@ This file is the project's committed home for project-intrinsic agent knowledge:
   and [`integration/load-harness/README.md`](integration/load-harness/README.md).
 - `make integrate-smoke` (Python + Node example containers), `make lab-seed`
   (regression baseline), `make load-up|load-run|load-fault|load-down`.
-- Community LocalStack does **not** durably persist S3/DynamoDB across restarts
-  (Pro-only). Regression baseline is wipe + `lab-seed`, not snapshot/restore.
+- `PERSISTENCE=1` and the state save/restore API are **paid-only** and no-ops on
+  the community image. Regression baseline is code-as-baseline (`make reset` +
+  re-apply Terraform + `make lab-seed`); `lab-snapshot`/`lab-restore` are an
+  optional speed cache only. See [`docs/fidelity-matrix.md`](docs/fidelity-matrix.md).
 - Traefik pinned at `v3.6` - `v3.3` fails to talk to Docker Desktop's daemon
   (Docker 29 API). Docker Desktop does not auto-restart a `pumba kill`ed
   container; re-run `make load-up` to restore replica count.
@@ -57,9 +65,10 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - Pinned: Terraform `1.5.7` (in `terraform/.bin/` via `make tf-install`),
   `hashicorp/aws` `5.83.1` (locked, multi-platform).
 - **`elbv2` / `elb` / `ecs` / `autoscaling` / `application-autoscaling` are
-  LocalStack Pro-only at every version.** `foundation` applies/destroys on the
-  no-token image; `system-design` only `validate`s + `plan`s there and needs Pro
-  or real AWS to `apply`. Do not "fix" this by rescoping - it is documented.
+  paid-tier-only (LocalStack Base+) at every version** - a free token does not
+  include them. `foundation` applies/destroys on the no-token image;
+  `system-design` only `validate`s + `plan`s there and needs a paid tier or real
+  AWS to `apply`. Do not "fix" this by rescoping - it is documented.
 - Make targets (below the sibling marker): `tf-install`, `tf-validate`,
   `tf-fmt-check`, `tf-foundation-apply`/`-destroy`,
   `tf-system-design-apply`/`-destroy`, `tf-plan-all`, `tf-destroy-all`.

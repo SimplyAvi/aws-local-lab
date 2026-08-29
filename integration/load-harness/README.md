@@ -15,14 +15,18 @@ behaviour LocalStack itself cannot provide.
 
 ## What this demonstrates that LocalStack cannot
 
-LocalStack emulates the **control plane** for ELB/ALB, EC2, ECS, Auto Scaling -
-`aws elbv2 create-load-balancer` succeeds and the resource is describable, but
-**no traffic is balanced, no packet is routed, nothing actually runs**. This
-harness is the **data plane**, built from real containers:
+On the free/community image `aws elbv2 create-load-balancer` **is not available
+at all** - `elbv2`, `ecs`, and `autoscaling` are paid-tier-only and return
+`InternalFailure ... not yet implemented or pro feature` (HTTP 501). Only a
+**paid** LocalStack tier emulates their *control plane* (the LB / listener /
+target group become describable) - and **even then no HTTP dataplane exists**:
+no request is ever balanced, no packet routed, nothing runs. See
+[`../../docs/fidelity-matrix.md`](../../docs/fidelity-matrix.md). This harness is
+the **data plane**, built from real containers:
 
 | Property | LocalStack (Layer 2) | This harness (Layer 3) |
 |---|---|---|
-| Request distribution across replicas | described only | **real** - round-robin, measured |
+| Request distribution across replicas | none (free) / described only (paid) | **real** - round-robin, measured |
 | Failover when a node dies / hangs | n/a | **real** - Traefik health-checks out the bad node |
 | Saturation / latency under load | n/a | **real** - p95/p99 move as VUs climb |
 | Fault injection (kill, freeze, delay) | n/a | **real** - pumba |
@@ -129,6 +133,19 @@ docker compose --profile tools run --rm pumba \
 `kill` demonstrates failover to a smaller pool (and, with `make load-up`
 re-run, orchestrator-style replacement); `pause` / `netem delay` demonstrate a
 degraded-but-present node, which is the more interesting balancer case.
+
+## Upgrade path: k3d for real autoscaling
+
+This harness scales replicas with a manual integer (`--scale app=N`). If real
+scheduler-driven autoscaling is ever wanted - an HPA reacting to CPU/latency,
+rolling deploys, pod disruption budgets, bin-packing - `compose --scale` is not
+enough and **`k3d`** (k3s-in-Docker, one command, fits the Docker-only
+constraint) is the documented next step: it replaces "Traefik + compose
+replicas" with a real scheduler + ingress + HPA while the app keeps using
+LocalStack for state. This is out of scope now (README D-5) and should be
+revisited only if an autoscaling experiment is actually queued. LocalStack's own
+EKS is paid-tier and just spins up a `k3d` cluster under the hood, so going
+straight to `k3d` is the simpler path.
 
 ## Layout
 
