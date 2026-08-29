@@ -19,6 +19,17 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - Seam dirs `terraform/`, `examples/`, `integration/` are stubs for sibling tracks.
 - Shell scripts must stay `shellcheck`-clean (NFR-7).
 
+## Sample app (FR-3, `lab-sampleapp`)
+
+- `examples/serverless-crud/`: API Gateway (REST) -> Lambda -> DynamoDB, plus S3
+  presign + SQS/worker-Lambda event path. Deployed by a flat `deploy.sh` over
+  `bin/awslocal` (not Terraform - the tracks land in parallel). Targets:
+  `make sample-deploy` / `sample-test` / `sample-destroy`, all honour `EDGE_PORT`.
+- The e2e test is stdlib-only Python (`test/e2e_test.py`) - no pip installs.
+- LocalStack quirks it works around (reserved DynamoDB words, cross-container
+  `AWS_ENDPOINT_URL`, presigned-URL host rewrite, `_user_request_` URL format) are
+  documented in `examples/serverless-crud/README.md` - read that before changing it.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

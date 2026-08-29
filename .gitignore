@@ -7,3 +7,8 @@ node_modules/
 .localstack/
 volume/
 tmp/
+
+# examples/serverless-crud (FR-3): generated at deploy time
+examples/serverless-crud/.stack.env
+examples/serverless-crud/.build/
+__pycache__/

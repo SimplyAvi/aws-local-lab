@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# Deploy the serverless-crud sample to the local lab.
+#
+# Why a deploy script and not Terraform: this track must stand alone while the
+# `lab-terraform` track lands in parallel, and the whole stack is ~8 resources
+# wired once. A flat script using the same `bin/awslocal` wrapper the rest of the
+# lab uses is the simplest end-to-end path and doubles as living documentation of
+# every API call involved. Swap in Terraform later if the stack grows.
+#
+# Idempotent-ish: run `destroy.sh` first for a clean slate. Writes the deployed
+# resource ids to .stack.env for the test + destroy scripts to consume.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+AWSLOCAL="$REPO_ROOT/bin/awslocal"
+STACK_ENV="$HERE/.stack.env"
+
+# The lab edge. Defaults match `make up`; `make` exports LAB_ENDPOINT/EDGE_PORT
+# when you override the port (e.g. another lab instance already holds 4566).
+EDGE_PORT="${EDGE_PORT:-4566}"
+LAB_ENDPOINT="${LAB_ENDPOINT:-http://localhost:${EDGE_PORT}}"
+export LAB_ENDPOINT
+EDGE_HOST_PORT="${LAB_ENDPOINT##*:}"
+
+NAME_PREFIX="notes"
+TABLE="${NAME_PREFIX}"
+BUCKET="${NAME_PREFIX}-uploads"
+QUEUE="${NAME_PREFIX}-events"
+API_LAMBDA="${NAME_PREFIX}-api"
+WORKER_LAMBDA="${NAME_PREFIX}-worker"
+STAGE="local"
+RUNTIME="python3.12"
+ROLE_ARN="arn:aws:iam::000000000000:role/lambda-role"   # IAM is not enforced by LocalStack
+
+# Cross-container endpoint: LocalStack's internal DNS resolves this name to the
+# edge from inside Lambda containers (localhost would point at the lambda itself).
+LAMBDA_ENDPOINT="http://localhost.localstack.cloud:4566"
+
+log() { printf '\033[36m==>\033[0m %s\n' "$*"; }
+
+log "building lambda zips"
+BUILD="$HERE/.build"
+rm -rf "$BUILD"; mkdir -p "$BUILD"
+( cd "$HERE/src" && zip -q "$BUILD/api.zip" api_handler.py )
+( cd "$HERE/src" && zip -q "$BUILD/worker.zip" worker_handler.py )
+
+log "DynamoDB table: $TABLE"
+"$AWSLOCAL" dynamodb create-table \
+  --table-name "$TABLE" \
+  --attribute-definitions AttributeName=id,AttributeType=S \
+  --key-schema AttributeName=id,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST >/dev/null
+"$AWSLOCAL" dynamodb wait table-exists --table-name "$TABLE"
+
+log "S3 bucket: $BUCKET"
+"$AWSLOCAL" s3api create-bucket --bucket "$BUCKET" >/dev/null
+
+log "SQS queue: $QUEUE"
+QUEUE_URL="$("$AWSLOCAL" sqs create-queue --queue-name "$QUEUE" --query QueueUrl --output text)"
+QUEUE_ARN="$("$AWSLOCAL" sqs get-queue-attributes --queue-url "$QUEUE_URL" \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)"
+
+create_fn() {
+  local name="$1" zip="$2" handler="$3" extra_env="$4"
+  log "Lambda: $name"
+  "$AWSLOCAL" lambda create-function \
+    --function-name "$name" \
+    --runtime "$RUNTIME" \
+    --handler "$handler" \
+    --role "$ROLE_ARN" \
+    --timeout 30 \
+    --zip-file "fileb://$zip" \
+    --environment "Variables={TABLE=$TABLE,BUCKET=$BUCKET,QUEUE_URL=$QUEUE_URL,AWS_ENDPOINT_URL=$LAMBDA_ENDPOINT$extra_env}" \
+    >/dev/null
+  "$AWSLOCAL" lambda wait function-active-v2 --function-name "$name"
+}
+
+create_fn "$API_LAMBDA" "$BUILD/api.zip" "api_handler.handler" ""
+create_fn "$WORKER_LAMBDA" "$BUILD/worker.zip" "worker_handler.handler" ""
+
+log "SQS -> $WORKER_LAMBDA event source mapping"
+"$AWSLOCAL" lambda create-event-source-mapping \
+  --function-name "$WORKER_LAMBDA" \
+  --event-source-arn "$QUEUE_ARN" \
+  --batch-size 5 >/dev/null
+
+log "REST API -> $API_LAMBDA"
+API_ID="$("$AWSLOCAL" apigateway create-rest-api --name "${NAME_PREFIX}-api" \
+  --query id --output text)"
+ROOT_ID="$("$AWSLOCAL" apigateway get-resources --rest-api-id "$API_ID" \
+  --query 'items[0].id' --output text)"
+PROXY_ID="$("$AWSLOCAL" apigateway create-resource --rest-api-id "$API_ID" \
+  --parent-id "$ROOT_ID" --path-part '{proxy+}' --query id --output text)"
+
+LAMBDA_ARN="$("$AWSLOCAL" lambda get-function --function-name "$API_LAMBDA" \
+  --query 'Configuration.FunctionArn' --output text)"
+INTEGRATION_URI="arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/${LAMBDA_ARN}/invocations"
+
+for res in "$ROOT_ID" "$PROXY_ID"; do
+  "$AWSLOCAL" apigateway put-method --rest-api-id "$API_ID" --resource-id "$res" \
+    --http-method ANY --authorization-type NONE >/dev/null
+  "$AWSLOCAL" apigateway put-integration --rest-api-id "$API_ID" --resource-id "$res" \
+    --http-method ANY --type AWS_PROXY --integration-http-method POST \
+    --uri "$INTEGRATION_URI" >/dev/null
+done
+
+"$AWSLOCAL" apigateway create-deployment --rest-api-id "$API_ID" --stage-name "$STAGE" >/dev/null
+"$AWSLOCAL" lambda add-permission --function-name "$API_LAMBDA" \
+  --statement-id apigw --action lambda:InvokeFunction \
+  --principal apigateway.amazonaws.com >/dev/null 2>&1 || true
+
+# LocalStack REST API URL format (the "_user_request_" magic path).
+API_URL="http://localhost:${EDGE_HOST_PORT}/restapis/${API_ID}/${STAGE}/_user_request_"
+
+cat > "$STACK_ENV" <<EOF
+# generated by deploy.sh - consumed by test/e2e_test.py and destroy.sh
+TABLE=$TABLE
+BUCKET=$BUCKET
+QUEUE=$QUEUE
+QUEUE_URL=$QUEUE_URL
+API_LAMBDA=$API_LAMBDA
+WORKER_LAMBDA=$WORKER_LAMBDA
+API_ID=$API_ID
+API_URL=$API_URL
+LAB_ENDPOINT=$LAB_ENDPOINT
+EOF
+
+log "done"
+echo
+cat "$STACK_ENV"
+echo
+echo "API base: $API_URL/notes"
