@@ -188,6 +188,7 @@ tf-foundation-apply: ## Apply the foundation stack (VPC / subnets / IGW / SGs)
 	@$(TF) -chdir=$(TF_FOUNDATION) apply -auto-approve -input=false -no-color
 
 tf-foundation-destroy: ## Destroy the foundation stack
+	@$(TF) -chdir=$(TF_FOUNDATION) init -input=false -no-color
 	@$(TF) -chdir=$(TF_FOUNDATION) destroy -auto-approve -input=false -no-color
 
 tf-system-design-apply: ## Apply the system-design stack (ALB / ECS / Auto Scaling - needs LocalStack Pro or real AWS)
@@ -202,6 +203,7 @@ tf-system-design-apply: ## Apply the system-design stack (ALB / ECS / Auto Scali
 	}
 
 tf-system-design-destroy: ## Destroy the system-design stack
+	@$(TF) -chdir=$(TF_SYSDESIGN) init -input=false -no-color
 	@$(TF) -chdir=$(TF_SYSDESIGN) destroy -auto-approve -input=false -no-color
 
 tf-plan-all: ## Plan both stacks (foundation first, then system-design)
