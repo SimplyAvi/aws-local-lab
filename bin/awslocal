@@ -1,0 +1,17 @@
+#!/bin/sh
+# aws-local-lab :: awslocal - run the AWS CLI against the local lab edge.
+#   bin/awslocal s3 mb s3://smoke
+#   bin/awslocal s3 ls
+#
+# Thin wrapper: pins the endpoint + region and defaults dummy credentials so it
+# works from a fresh checkout with nothing configured.
+set -eu
+
+: "${AWS_ACCESS_KEY_ID:=test}"
+: "${AWS_SECRET_ACCESS_KEY:=test}"
+: "${AWS_DEFAULT_REGION:=us-east-1}"
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
+
+LAB_ENDPOINT="${LAB_ENDPOINT:-http://localhost:4566}"
+
+exec aws --endpoint-url="$LAB_ENDPOINT" --region "$AWS_DEFAULT_REGION" "$@"

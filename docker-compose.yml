@@ -1,0 +1,50 @@
+# aws-local-lab :: FR-1 core stack
+# LocalStack in token mode (default). See docker-compose.no-token.yml for the
+# pinned pre-2026 community image that runs with no auth token.
+#
+# Image tags are pinned deliberately - see docs/foundation.md.
+services:
+  localstack:
+    container_name: aws-local-lab
+    # Token mode default: current LocalStack image (2026 free tier, auth-token based).
+    # Override with LOCALSTACK_IMAGE in .env; no-token override lives in
+    # docker-compose.no-token.yml.
+    image: ${LOCALSTACK_IMAGE:-localstack/localstack:4.9.0}
+    ports:
+      # Host edge port (EDGE_PORT, default 4566). Override only if 4566 is taken.
+      - "127.0.0.1:${EDGE_PORT:-4566}:4566"
+      - "127.0.0.1:4510-4559:4510-4559"  # external service ports (Lambda, etc.)
+    environment:
+      # Free-tier auth token; read from .env. Empty in no-token mode.
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN:-}
+      # Empty = eager-load all community services. Narrow for faster boot.
+      - SERVICES=${SERVICES:-}
+      # 1 = persist state across restarts (writes into the named volume).
+      - PERSISTENCE=${PERSISTENCE:-0}
+      - DEBUG=${DEBUG:-0}
+      # Lambda executes as sibling containers via the mounted Docker socket.
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - aws-local-lab-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - aws-local-lab
+    healthcheck:
+      # Health-endpoint contract: docs/foundation.md
+      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  aws-local-lab-data:
+    name: aws-local-lab-data
+
+networks:
+  # External so sibling compose projects can join:
+  #   networks: { aws-local-lab: { external: true } }
+  # `make up` creates it if absent.
+  aws-local-lab:
+    name: aws-local-lab
+    external: true
