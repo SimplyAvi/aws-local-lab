@@ -403,3 +403,36 @@ Full guide: [`integration/README.md`](integration/README.md) and
 
 Extra knobs (this track): `LOAD_REPLICAS`, `LOAD_VUS`, `LOAD_HOLD`,
 `LOAD_LB_PORT`, `FAULT_INTERVAL`, `FAULT_DURATION`, `SNAPSHOT_NAME`.
+
+---
+
+## 13. Terraform stacks (`lab-terraform`)
+
+Terraform IaC targeting the lab lives in [`terraform/`](terraform/) - see
+[`terraform/README.md`](terraform/README.md) for the full guide.
+
+- **`terraform/foundation/`** - VPC, 2 subnets across AZs, internet gateway +
+  route table, security groups. Applies and destroys cleanly on the no-token
+  image.
+- **`terraform/system-design/`** - ALB + target group + listener, ECS cluster +
+  Fargate service + task definition, Application Auto Scaling. Depends on
+  `foundation` via `terraform_remote_state`. `validate` + `plan` clean on the
+  no-token image; **`apply` needs LocalStack Pro or real AWS** (`elbv2` / `ecs` /
+  `application-autoscaling` are Pro-only). The real load-balancing test is
+  `lab-integration`'s Layer 3 harness.
+
+Local wiring is a committed `providers.tf` per stack (an `endpoints {}` block at
+`http://127.0.0.1:4566` with dummy creds); every other `.tf` is valid against
+real AWS. Terraform is pinned to `1.5.7`, `hashicorp/aws` to `5.83.1`.
+
+```sh
+make up NO_TOKEN=1
+make tf-install                 # pinned terraform -> terraform/.bin/
+make tf-foundation-apply
+make tf-plan-all                # system-design plans clean; apply needs Pro
+make tf-destroy-all
+```
+
+Targets: `tf-install`, `tf-validate`, `tf-fmt-check`, `tf-foundation-apply` /
+`tf-foundation-destroy`, `tf-system-design-apply` / `tf-system-design-destroy`,
+`tf-plan-all`, `tf-destroy-all`.

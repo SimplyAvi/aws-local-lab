@@ -20,3 +20,8 @@ integration/.snapshots/
 # Python
 __pycache__/
 *.pyc
+
+# lab-terraform (FR-2)
+terraform/.bin/
+.terraform.tfstate.lock.info
+crash.log
