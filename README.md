@@ -464,3 +464,17 @@ make tf-destroy-all
 Targets: `tf-install`, `tf-validate`, `tf-fmt-check`, `tf-foundation-apply` /
 `tf-foundation-destroy`, `tf-system-design-apply` / `tf-system-design-destroy`,
 `tf-plan-all`, `tf-destroy-all`.
+
+---
+
+## 14. CI (`.github/workflows/ci.yml`)
+
+Runs on every PR and on `push` to `main`. Jobs: `lint` (shellcheck + `docker
+compose config` + `make -n`), `terraform` (`fmt`/`validate` on the pinned
+`1.5.7`), `e2e` (stands up the tokenless lab and runs `sample-deploy` +
+`sample-test`, `tf-foundation-apply`/`tf-destroy-all`, and `integrate-smoke`
+against it), `load-smoke` (harness buildability), and `secrets` (`gitleaks`).
+
+`lint`, `terraform`, `e2e`, and `secrets` are the required checks for merge.
+Full pipeline description and the exact branch-protection settings to apply:
+[`docs/ci.md`](docs/ci.md).

@@ -81,6 +81,22 @@ This file is the project's committed home for project-intrinsic agent knowledge:
   `tf-system-design-apply`/`-destroy`, `tf-plan-all`, `tf-destroy-all`.
 - Keep `terraform fmt -check -recursive` and `terraform validate` clean.
 
+## CI (`.github/workflows/ci.yml`)
+
+- Green gate on every PR + `push` to `main`. Jobs: `lint`, `terraform`, `e2e`,
+  `load-smoke`, `secrets`. Required for merge: `lint` + `terraform` + `e2e` +
+  `secrets` (`load-smoke` is informational). Full description + the exact
+  branch-protection settings to apply live in [`docs/ci.md`](docs/ci.md) -
+  branch protection is applied via repo settings, never from the workflow.
+- Everything runs on the tokenless `localstack/localstack:4.14.0` image; no
+  paid-tier `apply`. All actions pinned to released tags.
+- `e2e` really stands up the lab and runs `sample-deploy`/`sample-test`,
+  `tf-foundation-apply`/`tf-destroy-all`, and `integrate-smoke` against it.
+- Helpers in `ci/` (`lint.sh`, `wait-for-health.sh`) are `shellcheck`-clean and
+  bash-3 portable. `wait-for-health.sh` is the cold-start race guard - extend
+  its bound rather than weakening a test assertion. No app/infra/test logic is
+  forked for CI; the only env nudge is `LAB_ENDPOINT`/`EDGE_PORT`.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.
