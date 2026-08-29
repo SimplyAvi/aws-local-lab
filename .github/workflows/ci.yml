@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref (keeps queues short).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# NO_TOKEN is passed explicitly only to `make up` / `make reset` - it must NOT be
+# a global env var: it also flips $(COMPOSE) to layer the root compose files, which
+# breaks the relative build contexts in integration/ compose files run via `make`.
+env:
+  TF_VERSION: "1.5.7"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Tool versions
+        run: |
+          shellcheck --version | head -n2
+          docker compose version
+      - name: shellcheck + compose config + make -n
+        run: ./ci/lint.sh
+
+  # ---------------------------------------------------------------------------
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: hashicorp/setup-terraform@v3.1.2
+        with:
+          terraform_version: "1.5.7"
+          terraform_wrapper: false
+      - name: terraform fmt
+        run: terraform -chdir=terraform fmt -check -recursive
+      - name: validate root modules
+        run: |
+          set -euo pipefail
+          for d in terraform/foundation terraform/system-design; do
+            echo "== $d"
+            terraform -chdir="$d" init -backend=false -input=false -no-color
+            terraform -chdir="$d" validate -no-color
+          done
+
+  # ---------------------------------------------------------------------------
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      LAB_ENDPOINT: http://localhost:4566
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: hashicorp/setup-terraform@v3.1.2
+        with:
+          terraform_version: "1.5.7"
+          terraform_wrapper: false
+
+      - name: Bring up the lab (pinned localstack/localstack:4.14.0)
+        run: make up NO_TOKEN=1
+
+      - name: Wait for edge + core services
+        run: ./ci/wait-for-health.sh 180
+
+      - name: make status
+        run: make status
+
+      - name: Sample app - deploy + e2e
+        run: |
+          make sample-deploy
+          make sample-test
+
+      - name: Terraform foundation - apply + destroy against the running lab
+        run: |
+          make tf-foundation-apply
+          make tf-destroy-all
+
+      - name: Integration smoke (Python + Node containers)
+        run: make integrate-smoke
+
+      - name: Collect LocalStack logs
+        if: always()
+        run: |
+          mkdir -p ci-logs
+          docker compose -f docker-compose.yml -f docker-compose.no-token.yml logs --no-color > ci-logs/localstack.log 2>&1 || true
+          docker ps -a > ci-logs/docker-ps.txt 2>&1 || true
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: e2e-localstack-logs
+          path: ci-logs/
+          retention-days: 7
+
+      - name: Tear down
+        if: always()
+        run: make reset NO_TOKEN=1
+
+  # ---------------------------------------------------------------------------
+  load-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Validate + build the load harness
+        run: |
+          docker compose -f integration/load-harness/docker-compose.yml config -q
+          docker compose -f integration/load-harness/docker-compose.yml build app
+      # A full k6 run is intentionally left out of CI: it needs the lab + Traefik
+      # + app replicas up and adds several minutes for a signal the e2e job
+      # already covers behaviourally. This job proves the harness image and
+      # compose file stay buildable/parseable. Run `make load-up load-run` locally.
+
+  # ---------------------------------------------------------------------------
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
