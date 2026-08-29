@@ -1,0 +1,92 @@
+# aws-local-lab :: Layer 3 load / system-design harness
+#
+#   make load-up          # build + start Traefik + N app replicas (LOAD_REPLICAS)
+#   make load-run          # run the k6 scenario through the balancer
+#   make load-fault        # kill/delay a replica mid-test (pumba)
+#   make load-down         # tear the harness down
+#
+# The app replicas keep ALL state in Layer 1 (LocalStack S3 + DynamoDB) on the
+# shared aws-local-lab network, so the balancer can spread load and fail over
+# between interchangeable replicas.
+name: aws-local-lab-load-harness
+
+services:
+  traefik:
+    image: traefik:v3.6
+    restart: always
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=aws-local-lab
+      - --entrypoints.web.address=:80
+      - --ping=true
+      - --accesslog=true
+      - --log.level=INFO
+    ports:
+      - "127.0.0.1:${LOAD_LB_PORT:-8080}:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [aws-local-lab]
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    build: ./app
+    # Recover after a crash/daemon restart. To restore capacity after a hard
+    # `pumba kill`, re-run `make load-up` (Compose recreates missing replicas) -
+    # the stand-in for an ECS/ASG replacing a failed task.
+    restart: always
+    expose:
+      - "8080"
+    environment:
+      AWS_ENDPOINT_URL: http://aws-local-lab:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      LAB_BUCKET: load-harness
+      LAB_TABLE: load-harness
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.app.rule=PathPrefix(`/`)
+      - traefik.http.routers.app.entrypoints=web
+      - traefik.http.services.app.loadbalancer.server.port=8080
+      - traefik.http.services.app.loadbalancer.healthcheck.path=/healthz
+      - traefik.http.services.app.loadbalancer.healthcheck.interval=5s
+      - traefik.http.services.app.loadbalancer.healthcheck.timeout=3s
+    networks: [aws-local-lab]
+    depends_on: [traefik]
+
+  # --- tools (started explicitly, never by `load-up`) ---------------------
+  k6:
+    image: grafana/k6:0.55.0
+    profiles: ["tools"]
+    entrypoint: ["k6"]
+    command: ["run", "/scenarios/load.js"]
+    environment:
+      TARGET_URL: http://traefik:80
+      VUS: "${LOAD_VUS:-20}"
+      HOLD: "${LOAD_HOLD:-20s}"
+    volumes:
+      - ./scenarios:/scenarios:ro
+    networks: [aws-local-lab]
+
+  # Fault injection (FR-5.3). Default: repeatedly freeze a random replica for
+  # FAULT_DURATION so the balancer has to route around an unresponsive node,
+  # then let it recover - a self-healing scenario safe to run under load.
+  # `make load-fault`. For a hard-kill instead, see load-harness/README.md.
+  pumba:
+    image: gaiaadm/pumba:0.11.6
+    profiles: ["tools"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      --log-level info --random --interval ${FAULT_INTERVAL:-15s}
+      pause --duration ${FAULT_DURATION:-8s} "re2:aws-local-lab-load-harness-app-.*"
+    networks: [aws-local-lab]
+
+networks:
+  aws-local-lab:
+    external: true

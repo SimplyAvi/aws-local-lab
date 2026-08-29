@@ -1,0 +1,14 @@
+{
+  "name": "aws-local-lab-node-example",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "boto3-equivalent AWS SDK v3 client factory + smoke test against aws-local-lab",
+  "scripts": {
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.744.0",
+    "@aws-sdk/client-s3": "3.744.0"
+  }
+}

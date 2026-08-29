@@ -1,0 +1,14 @@
+{
+  "name": "aws-local-lab-load-harness-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stateless HTTP service for the load harness; state in LocalStack S3 + DynamoDB",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.744.0",
+    "@aws-sdk/client-s3": "3.744.0"
+  }
+}

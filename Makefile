@@ -82,3 +82,65 @@ sample-test: ## Run the serverless-crud end-to-end test (needs sample-deploy)
 
 sample-destroy: ## Tear down the serverless-crud sample
 	@./examples/serverless-crud/destroy.sh
+
+# ----------------------------------------------------------------------
+# lab-integration (FR-4 / FR-5) - see integration/README.md
+# ----------------------------------------------------------------------
+INTEG_DIR      := integration
+SMOKE_COMPOSE  := $(COMPOSE) -f $(INTEG_DIR)/examples/docker-compose.smoke.yml
+LOAD_COMPOSE   := $(COMPOSE) -f $(INTEG_DIR)/load-harness/docker-compose.yml
+LOAD_REPLICAS  ?= 3
+SNAPSHOT_DIR   ?= $(INTEG_DIR)/.snapshots
+SNAPSHOT_NAME  ?= baseline
+
+.PHONY: integrate-smoke load-up load-run load-fault load-down load-ps lab-seed lab-snapshot lab-restore
+
+integrate-smoke: ## FR-4: run the Python + Node client examples as containers against the lab
+	@docker network inspect $(NETWORK) >/dev/null 2>&1 || $(MAKE) --no-print-directory network
+	@curl -sf $(LAB_ENDPOINT)/_localstack/health >/dev/null 2>&1 || $(MAKE) --no-print-directory up NO_TOKEN=1
+	$(SMOKE_COMPOSE) build
+	@set -e; rc=0; \
+	  $(SMOKE_COMPOSE) run --rm python-smoke || rc=$$?; \
+	  $(SMOKE_COMPOSE) run --rm node-smoke || rc=$$?; \
+	  $(SMOKE_COMPOSE) down --remove-orphans >/dev/null 2>&1 || true; \
+	  if [ $$rc -ne 0 ]; then echo "integrate-smoke FAILED ($$rc)"; exit $$rc; fi; \
+	  echo "integrate-smoke PASS"
+
+load-up: ## FR-5: build + start Traefik and $(LOAD_REPLICAS) app replicas on the lab network
+	@docker network inspect $(NETWORK) >/dev/null 2>&1 || $(MAKE) --no-print-directory network
+	@curl -sf $(LAB_ENDPOINT)/_localstack/health >/dev/null 2>&1 || $(MAKE) --no-print-directory up NO_TOKEN=1
+	$(LOAD_COMPOSE) build
+	$(LOAD_COMPOSE) up -d --scale app=$(LOAD_REPLICAS) traefik app
+	@echo "balancer: http://localhost:$${LOAD_LB_PORT:-8080}  replicas: $(LOAD_REPLICAS)"
+
+load-run: ## FR-5: run the k6 scenario through the balancer (LOAD_VUS, LOAD_HOLD)
+	$(LOAD_COMPOSE) run --rm k6
+
+load-fault: ## FR-5: kill app replicas mid-test with pumba (Ctrl-C to stop; FAULT_INTERVAL)
+	$(LOAD_COMPOSE) run --rm pumba
+
+load-ps: ## Show load-harness containers
+	$(LOAD_COMPOSE) ps
+
+load-down: ## FR-5: tear the load harness down
+	$(LOAD_COMPOSE) --profile tools down --remove-orphans
+
+lab-seed: ## FR-4: (re)create the baseline lab resources - the no-token regression baseline
+	@curl -sf $(LAB_ENDPOINT)/_localstack/health >/dev/null 2>&1 || $(MAKE) --no-print-directory up NO_TOKEN=1
+	@LAB_ENDPOINT=$(LAB_ENDPOINT) ./$(INTEG_DIR)/seed.sh
+
+lab-snapshot: ## FR-4: tar the named volume to $(SNAPSHOT_DIR)/$(SNAPSHOT_NAME).tgz (see caveat in integration/README.md)
+	@mkdir -p $(SNAPSHOT_DIR)
+	@$(COMPOSE) stop localstack >/dev/null 2>&1 || true
+	docker run --rm -v $(VOLUME):/data:ro -v $(PWD)/$(SNAPSHOT_DIR):/backup alpine \
+		tar czf /backup/$(SNAPSHOT_NAME).tgz -C /data .
+	@$(COMPOSE) start localstack >/dev/null 2>&1 || true
+	@echo "snapshot -> $(SNAPSHOT_DIR)/$(SNAPSHOT_NAME).tgz"
+
+lab-restore: ## FR-4: restore the named volume from $(SNAPSHOT_DIR)/$(SNAPSHOT_NAME).tgz
+	@test -f $(SNAPSHOT_DIR)/$(SNAPSHOT_NAME).tgz || { echo "no snapshot $(SNAPSHOT_DIR)/$(SNAPSHOT_NAME).tgz"; exit 1; }
+	@$(COMPOSE) stop localstack >/dev/null 2>&1 || true
+	docker run --rm -v $(VOLUME):/data -v $(PWD)/$(SNAPSHOT_DIR):/backup alpine \
+		sh -c "rm -rf /data/* && tar xzf /backup/$(SNAPSHOT_NAME).tgz -C /data"
+	@$(COMPOSE) start localstack >/dev/null 2>&1 || true
+	@echo "restored from $(SNAPSHOT_DIR)/$(SNAPSHOT_NAME).tgz"

@@ -11,4 +11,12 @@ tmp/
 # examples/serverless-crud (FR-3): generated at deploy time
 examples/serverless-crud/.stack.env
 examples/serverless-crud/.build/
+
+# lab-integration (FR-4 / FR-5)
+integration/.snapshots/
+.aws-local.env
+*.aws-local.env
+
+# Python
 __pycache__/
+*.pyc

@@ -374,3 +374,32 @@ make up NO_TOKEN=1 && make sample-deploy && make sample-test
 Pass `EDGE_PORT=<port>` to all three if 4566 is taken. Details, the architecture
 diagram, and the LocalStack quirks it works around are in
 [`examples/serverless-crud/README.md`](examples/serverless-crud/README.md).
+
+---
+
+## 12. Integration kit and load harness (`lab-integration`, FR-4 / FR-5)
+
+Full guide: [`integration/README.md`](integration/README.md) and
+[`integration/load-harness/README.md`](integration/load-harness/README.md).
+
+- **Attach any project** to the lab: join the external `aws-local-lab` network,
+  point the AWS SDK at `http://aws-local-lab:4566` (in-network) or
+  `http://localhost:4566` (host). `integration/aws-local-env.sh` emits a
+  ready-to-source env file or a `docker-compose.override.yml` snippet in one
+  command, auto-detecting host vs in-network.
+- **Client snippets** (generic, containerised): `integration/examples/python/`
+  (boto3) and `integration/examples/node/` (AWS SDK v3), each with a Dockerfile
+  and an S3 + DynamoDB smoke test.
+- **`make integrate-smoke`** - runs both example smoke containers against the lab
+  from inside the network, asserts success.
+- **Regression baseline** - the no-token community image does not durably
+  persist data-plane state, so the baseline is `make lab-seed` (idempotent) and
+  "restore" is `make reset && make up && make lab-seed`. `make lab-snapshot` /
+  `make lab-restore` (volume tar) are provided for LocalStack Pro. See
+  `integration/README.md` §4.
+- **Layer 3 load harness** - `make load-up` / `load-run` / `load-fault` /
+  `load-down`: Traefik balancing real HTTP across N stateless app replicas
+  (state in LocalStack S3 + DynamoDB), k6 load scenarios, pumba fault injection.
+
+Extra knobs (this track): `LOAD_REPLICAS`, `LOAD_VUS`, `LOAD_HOLD`,
+`LOAD_LB_PORT`, `FAULT_INTERVAL`, `FAULT_DURATION`, `SNAPSHOT_NAME`.
