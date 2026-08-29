@@ -71,6 +71,15 @@ awslocal: ## Run the AWS CLI against the lab: make awslocal ARGS="s3 ls"
 # Add track-specific targets below this line, each in its own block.
 # ======================================================================
 
+# --- lab-diagnostics: doctor + log bundle (see docs/troubleshooting.md) --
+.PHONY: doctor logs-bundle
+
+doctor: ## Diagnose the whole lab - PASS/WARN/FAIL with a fix for each issue (JSON=1 for JSON)
+	@./bin/diagnose.sh $(if $(filter 1,$(JSON)),--json,)
+
+logs-bundle: ## Build a redacted, shareable diagnostics tarball in ./diagnostics/
+	@NO_TOKEN=$(NO_TOKEN) ./bin/collect-logs.sh
+
 # --- lab-sampleapp (FR-3): end-to-end serverless CRUD sample -------------
 .PHONY: sample-deploy sample-test sample-destroy
 

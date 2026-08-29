@@ -337,6 +337,8 @@ Without those two lines, `make up` behaves exactly like the no-token path
 | `make reset` | Stop, remove the `aws-local-lab-data` volume, prune the network. |
 | `make shell` | Shell into the container. |
 | `make awslocal ARGS="s3 ls"` | AWS CLI against the lab. |
+| `make doctor` | Diagnose the whole lab: PASS/WARN/FAIL with a fix for each issue (see [`docs/troubleshooting.md`](docs/troubleshooting.md)). |
+| `make logs-bundle` | Redacted, shareable diagnostics tarball in `./diagnostics/`. |
 
 Knobs live in `.env` (`PERSISTENCE=1`, `SERVICES=s3,dynamodb,...`, `EDGE_PORT`,
 `LOCALSTACK_IMAGE`, ...) - each documented inline in `.env.example`.
@@ -364,14 +366,20 @@ From the host, use `http://localhost:4566` (or `bin/awslocal`).
 
 ### 10.6 Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| `LOCALSTACK_AUTH_TOKEN` / activation errors on `make up` | You set `LOCALSTACK_IMAGE=localstack/localstack:latest` without a valid paid token. Clear `LOCALSTACK_IMAGE` (back to the tokenless `4.14.0` default) or use `make up NO_TOKEN=1`. |
-| State lost after `make restart` | Expected. `PERSISTENCE=1` is a paid feature and a no-op on the community image - see [`docs/fidelity-matrix.md`](docs/fidelity-matrix.md). Rebuild baseline state from code (`make reset` + Terraform + `make lab-seed`). |
-| `Bind for 0.0.0.0:4566 failed: port is already allocated` | Another process/container holds 4566. Stop it, or set `EDGE_PORT=4599` in `.env` (and export `LAB_ENDPOINT=http://localhost:4599` for `bin/awslocal`). |
-| `permission denied` on `/var/run/docker.sock` | Your user must be able to reach the Docker socket (Docker Desktop: ensure it's running; Linux: add yourself to the `docker` group and re-login). |
-| First `make up` is slow | Initial image pull is ~300 MB. Later boots take a few seconds. Narrow `SERVICES` in `.env` to speed eager loading. |
-| `make status` prints raw JSON | Install `jq` for the formatted table. |
+When a deploy or `make up` misbehaves, run the diagnostics tool - it checks the
+whole lab and prints a cause + fix for every problem:
+
+```sh
+make doctor          # PASS/WARN/FAIL report (JSON=1 for machine output)
+make logs-bundle     # redacted, shareable diagnostics tarball in ./diagnostics/
+```
+
+The full symptom -> cause -> fix reference is
+[`docs/troubleshooting.md`](docs/troubleshooting.md) - port 4566 conflicts,
+Docker socket permissions, exit code 55, `501` on paid-tier services, slow first
+boot, the health-wait hang, cross-container `localhost` vs `aws-local-lab:4566`,
+Lambda invoke failures, Terraform `501` / state locks, presigned-URL host
+mismatch, and `PERSISTENCE=1` on the community image.
 
 ## 11. Sample application (FR-3, `lab-sampleapp`)
 

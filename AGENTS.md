@@ -24,6 +24,13 @@ This file is the project's committed home for project-intrinsic agent knowledge:
   marker and README subsections under their own headings to avoid collisions.
 - Seam dirs `terraform/`, `examples/`, `integration/` are stubs for sibling tracks.
 - Shell scripts must stay `shellcheck`-clean (NFR-7).
+- Diagnostics: `make doctor` (`bin/diagnose.sh`) checks the whole lab and prints
+  PASS/WARN/FAIL + a fix per issue; `make logs-bundle` (`bin/collect-logs.sh`)
+  builds a redacted `./diagnostics/*.tar.gz` help bundle. `diagnose.sh` reuses
+  `bin/health-check.sh` for the per-service table - don't duplicate that parsing.
+  The symptom -> cause -> fix reference is
+  [`docs/troubleshooting.md`](docs/troubleshooting.md) (linked from the README).
+  `bin/diagnose.sh --emit-finding` outputs a `hirdr-knowledge` finding stub.
 
 ## Sample app (FR-3, `lab-sampleapp`)
 
