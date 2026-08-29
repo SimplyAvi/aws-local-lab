@@ -10,7 +10,7 @@ AWS.
 | Path | What |
 |---|---|
 | `foundation/` | Root module: VPC, 2 public subnets across AZs, internet gateway + route table, ALB & service security groups. The network baseline. Applies cleanly on the no-token LocalStack image. |
-| `system-design/` | Root module: Application Load Balancer + HTTP listener + target group, ECS cluster + Fargate task definition + service, Application Auto Scaling target + target-tracking policy. Reads `foundation` outputs via `terraform_remote_state`. **Needs LocalStack Pro or real AWS to `apply`** - see [Fidelity](#fidelity) / [Known gaps](#known-gaps). |
+| `system-design/` | Root module: Application Load Balancer + HTTP listener + target group, ECS cluster + Fargate task definition + service, Application Auto Scaling target + target-tracking policy. Reads `foundation` outputs via `terraform_remote_state`. **Needs a paid LocalStack tier (Base+) or real AWS to `apply`** - see [Fidelity](#fidelity) / [Known gaps](#known-gaps). |
 | `modules/network/` | Shared VPC / subnet / IGW / route-table module. |
 | `modules/ecs-service/` | Shared ALB + ECS + Auto Scaling module. |
 | `scripts/tf-install.sh` | Installs the pinned Terraform into `terraform/.bin/` (gitignored). |
@@ -98,9 +98,10 @@ terraform/.bin/terraform -chdir=terraform/foundation apply \
 Per the [three-layer model](../README.md#2-the-three-layer-model-read-this-first),
 this track lives in **Layer 2 - networking & compute control plane**. Resources
 are describable via the API; there is **no real traffic, no real VMs, no real
-containers**.
+containers**. The authoritative per-service coverage reference is
+[`../docs/fidelity-matrix.md`](../docs/fidelity-matrix.md).
 
-| Resource | On the no-token (community) image | On LocalStack Pro | On real AWS |
+| Resource | On the no-token (community) image | On a paid LocalStack tier (Base+) | On real AWS |
 |---|---|---|---|
 | VPC, subnets, internet gateway, route table, route table associations | **Real control plane** - created, described, destroyed. No packet routing. | same | real |
 | Security groups + rules | **Real control plane.** IAM/SG rules are **not enforced** - nothing filters traffic locally. | same | enforced |
@@ -119,8 +120,9 @@ fault injection), which runs actual HTTP against real containers.
 ## Known gaps
 
 `elbv2`, `elb`, `ecs`, `autoscaling`, and `application-autoscaling` are
-**LocalStack Pro features at every version** - confirmed against community images
-`3.8.1` and `4.5.0`, which return:
+**paid-tier-only (LocalStack Base and up) at every version** - a free "Hobby"
+token does not include them. Confirmed against community images `3.8.1`, `4.5.0`,
+and `4.14.0`, which return:
 
 ```
 InternalFailure: The API for service 'ecs' is either not included in your

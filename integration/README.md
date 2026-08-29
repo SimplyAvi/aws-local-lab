@@ -118,45 +118,41 @@ network.)
 
 ### The honest constraint
 
-The **no-token community image does not durably persist data-plane state**
-(S3 objects, DynamoDB items) across a container restart. Reliable persistence
-and Cloud Pods (snapshot/restore) are LocalStack **Pro** features. `PERSISTENCE=1`
-on the community image keeps the named volume mounted but LocalStack does not
-write S3/DynamoDB contents into it, so a volume snapshot of a stopped community
-container captures almost nothing useful.
+`PERSISTENCE=1`, the state save/restore API (`POST /_localstack/state/save`),
+and Cloud Pods are **paid (Base/Ultimate) features**. On the community image
+verified live: the state save endpoint returns **HTTP 404**, and `PERSISTENCE=1`
+writes **nothing** to the volume on shutdown - an S3 bucket created before a
+container recreate is gone afterwards. A volume tar of a stopped community
+container therefore captures almost nothing useful. See
+[`../docs/fidelity-matrix.md`](../docs/fidelity-matrix.md).
 
-### Recommended: wipe + re-seed (works on the no-token image)
+### The baseline is code, not a snapshot (code-as-baseline)
 
-Baseline = a deterministic seed script. "Restore" = wipe and re-run it.
+The baseline is reproducible from source: a `make reset`, the committed
+Terraform, and a deterministic seed script. "Restore" = wipe and re-run those.
 
 ```sh
-make lab-seed NO_TOKEN=1        # (re)create baseline resources - idempotent
+make reset NO_TOKEN=1 && make up NO_TOKEN=1     # fresh LocalStack 4.14.0
+make tf-foundation-apply                        # deterministic infra from terraform/
+make lab-seed NO_TOKEN=1                        # deterministic seed data - idempotent
 # ... run your project's tests, which mutate lab state ...
-make reset NO_TOKEN=1 && make up NO_TOKEN=1 && make lab-seed NO_TOKEN=1   # back to baseline
+# back to baseline: repeat the three lines above
 ```
 
 [`seed.sh`](seed.sh) is an **example** baseline (two S3 buckets + one DynamoDB
 table). Replace its body with your project's fixtures; keep every call
-idempotent. This is free, fast, and reproducible on any machine.
+idempotent. The baseline is then the git tree - diffable, reviewable, and it
+survives LocalStack upgrades for free.
 
-### If you have LocalStack Pro (token mode): volume snapshot
+### Optional speed cache: `make lab-snapshot` / `make lab-restore`
 
-With Pro, `PERSISTENCE=1` actually flushes state to `aws-local-lab-data`, so a
-volume tar is a true snapshot:
-
-```sh
-PERSISTENCE=1 make up            # token mode
-make lab-seed
-make lab-snapshot SNAPSHOT_NAME=baseline    # -> integration/.snapshots/baseline.tgz
-# ... run tests ...
-make lab-restore SNAPSHOT_NAME=baseline     # tar back into the volume, restart
-```
-
-`make lab-snapshot` / `make lab-restore` stop LocalStack, tar/untar the named
-volume via a throwaway `alpine` container, and restart. They work mechanically
-on any image; their **usefulness** depends on LocalStack actually persisting
-state (Pro, or a future community change). `integration/.snapshots/` is
-gitignored.
+If `reset` + re-apply + re-seed is too slow for a tight loop, `make lab-snapshot`
+tars the `aws-local-lab-data` volume (via a throwaway `alpine` container) and
+`make lab-restore` untars it back. **This is a cache, never the source of
+truth:** it is whole-volume and all-or-nothing, version-bound to the exact
+LocalStack image, and only partially populated (many services keep state in
+memory, not on the volume). The `reset` + re-apply path above must always work
+on its own. `integration/.snapshots/` is gitignored.
 
 ---
 
@@ -179,7 +175,7 @@ make load-down
 |---|---|
 | `make integrate-smoke` | Build + run the Python and Node example smoke containers against the lab. |
 | `make lab-seed` | (Re)create the baseline lab resources (`seed.sh`). |
-| `make lab-snapshot` / `make lab-restore` | Tar / untar the `aws-local-lab-data` volume (`SNAPSHOT_NAME`, default `baseline`). Pro-only fidelity - see §4. |
+| `make lab-snapshot` / `make lab-restore` | Tar / untar the `aws-local-lab-data` volume (`SNAPSHOT_NAME`, default `baseline`). Optional speed cache only, **not** a source of truth - see §4. |
 | `make load-up` / `make load-run` / `make load-fault` / `make load-down` / `make load-ps` | Layer 3 harness lifecycle. |
 
 Knobs: `LOAD_REPLICAS` (3), `LOAD_VUS` (20), `LOAD_HOLD` (20s), `LOAD_LB_PORT`

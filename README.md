@@ -59,8 +59,8 @@ flowchart TB
     end
     subgraph L2["Layer 2 - Networking & compute control plane (LocalStack)"]
         direction LR
-        L2A["VPC · Subnets · Security Groups"]
-        L2B["ALB/ELB · EC2 · Auto Scaling · ECS · RDS"]
+        L2A["Describable shells (free): VPC · Subnets · SGs · EC2 · Route53"]
+        L2B["Paid tier only: ALB/NLB · ECS · ECR · EKS · Auto Scaling · RDS · ElastiCache · Cognito"]
     end
     subgraph L3["Layer 3 - Real load balancing & system design (containers)"]
         direction LR
@@ -84,12 +84,19 @@ flowchart TB
 | Layer | What it is | Fidelity |
 |---|---|---|
 | **Layer 1** | Data and application services | **Real** - your code exercises these exactly as in production |
-| **Layer 2** | Networking and compute | **API only** - Terraform applies and resources are describable, but no real traffic or VMs |
+| **Layer 2a** | Networking / compute **describable shells** on the free tier: VPC, Subnets, Security Groups, EC2, Route53 | **API only** - Terraform applies and resources are describable, but no real traffic or VMs |
+| **Layer 2b** | **Not on the free tier** (require paid LocalStack): ALB/NLB, ECS, ECR, EKS, EC2 Auto Scaling, App Auto Scaling, RDS/Aurora, ElastiCache, Cognito | **Unavailable** - calls return `501` on the community image; Terraform stacks stay `validate`/`plan` only. Even on paid LocalStack the ALB/ECS have no dataplane. |
 | **Layer 3** | Real balancer + replicas + load generator | **Actually runs** - real HTTP, real failover, real saturation behavior |
 
 "Simulate load balancing and system design" lives in **Layer 3**. No AWS emulator
 provides a real load-balancer dataplane or real compute; that is built from real
 containers, while the app replicas still use Layer 1 for storage, queues, and state.
+
+> The authoritative, per-service breakdown of free-tier vs paid and
+> data-plane vs control-plane vs none is
+> [`docs/fidelity-matrix.md`](docs/fidelity-matrix.md). A **free ("Hobby")
+> LocalStack token unlocks nothing** beyond the unauthenticated community image;
+> the Pro service set needs a paid tier (Base $39-45/mo and up).
 
 ---
 
@@ -112,10 +119,10 @@ erDiagram
     LAB {
         string entrypoint "make up / down / status / reset"
         string endpoint "http://localhost:4566"
-        string emulator_base "LocalStack free tier (token) + no-token fallback"
+        string emulator_base "LocalStack community image 4.14.0 (no token); paid Pro optional"
     }
     AWS_SERVICE {
-        string fidelity "real | api-only | partial-paid"
+        string fidelity "real | api-only-free | paid-tier-only"
     }
     EXTERNAL_PROJECT {
         string integration "env file + client snippet + network join"
@@ -131,10 +138,11 @@ erDiagram
 - **FR-1.1** `docker-compose.yml` starts LocalStack on edge port `4566` with a pinned
   image tag (never `latest`).
 - **FR-1.2** Two supported modes:
-  - **Token mode (default):** reads `LOCALSTACK_AUTH_TOKEN` from `.env`, uses the current
-    LocalStack image.
-  - **No-token mode:** a documented override running a pinned pre-2026 community image
-    with no token. Must produce a working `make up` + `make status` on its own.
+  - **Default (no token):** pinned `localstack/localstack:4.14.0`, the last release that
+    boots with no auth token. Working `make up` + `make status` with zero setup.
+  - **Paid Pro mode (optional):** `LOCALSTACK_IMAGE=localstack/localstack:latest` plus a
+    **paid** `LOCALSTACK_AUTH_TOKEN` in `.env`, only to reach the Pro service set. A free
+    token unlocks nothing extra - see [`docs/fidelity-matrix.md`](docs/fidelity-matrix.md).
 - **FR-1.3** LocalStack is attached to an **external, named Docker network**
   (`aws-local-lab`) that other Compose projects can join.
 - **FR-1.4** Named volume for `/var/lib/localstack`; optional `PERSISTENCE=1` so state
@@ -222,11 +230,13 @@ erDiagram
 | Object storage, NoSQL, queues, pub/sub, events | Real | Yes - the sweet spot |
 | Serverless functions + HTTP APIs | Real | Yes |
 | Workflows, secrets, parameters, IAM shapes | Real | Yes |
-| VPC / subnets / security groups | API only | For validating Terraform; no packet routing |
-| Load balancers, EC2, Auto Scaling, ECS | API only | Terraform validates; real behavior via Layer 3 |
-| Managed databases (RDS/Aurora), other advanced services | Partial / paid | `lab-research` confirms exactly which need the paid tier |
+| VPC / subnets / security groups / EC2 / Route53 | API only (free) | For validating Terraform; no packet routing |
+| Load balancers (ALB/NLB), ECS, ECR, EKS, Auto Scaling | **Paid tier only** | Free tier: `501`. Terraform stacks stay `validate`/`plan`; real behavior via Layer 3 |
+| Managed databases (RDS/Aurora), ElastiCache, Cognito | **Paid tier only** | Free-tier substitute: run a real `postgres`/`redis`/`keycloak` container on the shared network |
 
-The authoritative, evidence-backed matrix is produced by `lab-research` (FR-6).
+The authoritative, evidence-backed matrix is
+[`docs/fidelity-matrix.md`](docs/fidelity-matrix.md) (ported from the `lab-research`
+FR-6 deliverable).
 
 ---
 
@@ -248,8 +258,8 @@ Delivered in two waves. Wave 2 depends on `lab-core` landing first, then runs in
 
 | # | Decision | Rationale |
 |---|---|---|
-| D-1 | Emulator base is **LocalStack free tier** | Best AWS coverage; free for non-commercial use. Needs a one-time free account + auth token. |
-| D-2 | **No-token fallback** is always supported | Lets the lab and its tests run without the captain's personal token, e.g. in CI or on a fresh machine. |
+| D-1 | Emulator base is **the tokenless LocalStack community image** (`4.14.0`) | Best free AWS coverage (~30 services), no account needed. A paid Base tier is a later, need-driven purchase (RDS/ECS/ALB fidelity) - not a free upgrade. See [`docs/fidelity-matrix.md`](docs/fidelity-matrix.md). |
+| D-2 | **No token required** for the default path | The lab and its tests run with zero setup on any machine and in CI. `NO_TOKEN=1` just forces the token env blank. |
 | D-3 | Repository is **public** (`SimplyAvi/aws-local-lab`) | Captain's choice. Keep secrets and tokens out of the repo; `.env` is gitignored. |
 | D-4 | Delivery is **direct-PR with auto-merge on green** | Each track pushes a branch and opens a PR; it merges once checks pass. Fast, with visible history and a green gate, without a heavy review pipeline. |
 | D-5 | **Compose container-scaling**, not Kubernetes | Sufficient for current system-design experiments. k3d revisited only if needed. |
@@ -262,10 +272,10 @@ Delivered in two waves. Wave 2 depends on `lab-core` landing first, then runs in
 
 | Risk / item | Status |
 |---|---|
-| LocalStack free tier is **non-commercial only** | Accepted for now. If apps become commercial, the tier must be revisited. |
-| Load balancers / EC2 / ECS are **API-only** in the emulator | Mitigated by the Layer 3 harness (FR-5). |
-| Some services may require the **paid tier** | `lab-research` (FR-6.5) confirms before Wave 2 commits. |
-| **LocalStack auth token** not yet provided | OPEN - captain creates a free account at app.localstack.cloud and supplies the token. Work proceeds on the no-token image meanwhile. |
+| LocalStack community image is **non-commercial only** | Accepted for now. If apps become commercial, a paid tier must be acquired. |
+| Load balancers / EC2 / ECS: EC2/VPC are API-only on the free tier, ALB/ECS/ASG are **paid-tier-only** (`501` on community) | Mitigated by the Layer 3 harness (FR-5). Confirmed in [`docs/fidelity-matrix.md`](docs/fidelity-matrix.md). |
+| RDS/Aurora, ElastiCache, Cognito require the **paid tier** | Free-tier substitute: real `postgres`/`redis`/`keycloak` containers on the shared network. |
+| **No auth token needed** | RESOLVED - the default `4.14.0` image boots tokenless. A paid token is only for the Pro service set. |
 | Parallel worker runtime is the **experimental backend** (standard one not installed) | Accepted. Monitored during Wave 1. |
 
 ---
@@ -279,33 +289,41 @@ Delivered by `lab-core` (FR-1). Deeper reference: [`docs/foundation.md`](docs/fo
 - **Docker** with Compose v2 (`docker compose ...`). Nothing else is required for
   the no-token path.
 - Optional: **`jq`** for a formatted `make status` table (raw JSON without it).
-- Optional: a **free LocalStack auth token** from
-  [app.localstack.cloud](https://app.localstack.cloud) -> Auth Tokens, for token mode.
+- Optional: a **paid LocalStack auth token** (Base tier and up), only if you need
+  Pro services (ELBv2/ECS/RDS/Cognito/...). The default path needs no token.
 
 ### 10.2 No-token path (works with zero setup)
 
 ```sh
 cp .env.example .env         # defaults are fine as-is
 make up NO_TOKEN=1           # creates the aws-local-lab network + boots the pinned
-                             #   pre-2026 community image (localstack/localstack:3.8.1)
+                             #   tokenless community image (localstack/localstack:4.14.0)
 make status                  # service -> state table
 bin/awslocal s3 mb s3://smoke && bin/awslocal s3 ls
 make reset NO_TOKEN=1        # stop + wipe volume + prune network
 ```
 
-### 10.3 Token path (default)
+`make up` (without `NO_TOKEN=1`) runs the **same** `4.14.0` image and needs no
+token either. The two paths differ only in that `docker-compose.no-token.yml`
+forces `LOCALSTACK_AUTH_TOKEN` blank.
+
+### 10.3 Paid Pro path (optional)
+
+Only needed to reach the Pro service set (ELBv2/ALB, ECS, RDS, Cognito, ...).
+A **free** ("Hobby") token does **not** unlock these - see
+[`docs/fidelity-matrix.md`](docs/fidelity-matrix.md).
 
 ```sh
 cp .env.example .env
-# edit .env: set LOCALSTACK_AUTH_TOKEN=<your free-tier token>
-make up                      # boots the current image (localstack/localstack:4.9.0)
+# edit .env:
+#   LOCALSTACK_AUTH_TOKEN=<your PAID Base/Ultimate token>
+#   LOCALSTACK_IMAGE=localstack/localstack:latest
+make up
 make status
 ```
 
-`make up` alone uses token mode; `LOCALSTACK_AUTH_TOKEN` is read from `.env`. If
-that variable is set in your shell environment, token mode picks it up too - the
-only difference from the no-token path is the image tag and that Pro-tier
-services become reachable.
+Without those two lines, `make up` behaves exactly like the no-token path
+(same `4.14.0` image, community service set).
 
 ### 10.4 Everyday targets
 
@@ -348,12 +366,12 @@ From the host, use `http://localhost:4566` (or `bin/awslocal`).
 
 | Symptom | Fix |
 |---|---|
-| `LOCALSTACK_AUTH_TOKEN` / activation errors on `make up` | Use `make up NO_TOKEN=1`, or put a valid free-tier token in `.env`. The no-token path never contacts LocalStack's API. |
+| `LOCALSTACK_AUTH_TOKEN` / activation errors on `make up` | You set `LOCALSTACK_IMAGE=localstack/localstack:latest` without a valid paid token. Clear `LOCALSTACK_IMAGE` (back to the tokenless `4.14.0` default) or use `make up NO_TOKEN=1`. |
+| State lost after `make restart` | Expected. `PERSISTENCE=1` is a paid feature and a no-op on the community image - see [`docs/fidelity-matrix.md`](docs/fidelity-matrix.md). Rebuild baseline state from code (`make reset` + Terraform + `make lab-seed`). |
 | `Bind for 0.0.0.0:4566 failed: port is already allocated` | Another process/container holds 4566. Stop it, or set `EDGE_PORT=4599` in `.env` (and export `LAB_ENDPOINT=http://localhost:4599` for `bin/awslocal`). |
 | `permission denied` on `/var/run/docker.sock` | Your user must be able to reach the Docker socket (Docker Desktop: ensure it's running; Linux: add yourself to the `docker` group and re-login). |
 | First `make up` is slow | Initial image pull is ~300 MB. Later boots take a few seconds. Narrow `SERVICES` in `.env` to speed eager loading. |
 | `make status` prints raw JSON | Install `jq` for the formatted table. |
-| State lost after `make restart` | Set `PERSISTENCE=1` in `.env`. `make reset` always wipes regardless. |
 
 ## 11. Sample application (FR-3, `lab-sampleapp`)
 
@@ -392,11 +410,12 @@ Full guide: [`integration/README.md`](integration/README.md) and
   and an S3 + DynamoDB smoke test.
 - **`make integrate-smoke`** - runs both example smoke containers against the lab
   from inside the network, asserts success.
-- **Regression baseline** - the no-token community image does not durably
-  persist data-plane state, so the baseline is `make lab-seed` (idempotent) and
-  "restore" is `make reset && make up && make lab-seed`. `make lab-snapshot` /
-  `make lab-restore` (volume tar) are provided for LocalStack Pro. See
-  `integration/README.md` §4.
+- **Regression baseline (code-as-baseline)** - `PERSISTENCE=1` and the state
+  save/restore API are **paid-only** and do nothing on the community image, so
+  the baseline is source, not a snapshot: `make reset` + re-apply Terraform +
+  `make lab-seed` (idempotent). `make lab-snapshot` / `make lab-restore` (volume
+  tar) exist as an optional *cache only, not source of truth*. See
+  `integration/README.md` §4 and [`docs/fidelity-matrix.md`](docs/fidelity-matrix.md).
 - **Layer 3 load harness** - `make load-up` / `load-run` / `load-fault` /
   `load-down`: Traefik balancing real HTTP across N stateless app replicas
   (state in LocalStack S3 + DynamoDB), k6 load scenarios, pumba fault injection.
@@ -417,9 +436,10 @@ Terraform IaC targeting the lab lives in [`terraform/`](terraform/) - see
 - **`terraform/system-design/`** - ALB + target group + listener, ECS cluster +
   Fargate service + task definition, Application Auto Scaling. Depends on
   `foundation` via `terraform_remote_state`. `validate` + `plan` clean on the
-  no-token image; **`apply` needs LocalStack Pro or real AWS** (`elbv2` / `ecs` /
-  `application-autoscaling` are Pro-only). The real load-balancing test is
-  `lab-integration`'s Layer 3 harness.
+  no-token image; **`apply` needs a paid LocalStack tier or real AWS** (`elbv2` /
+  `ecs` / `application-autoscaling` are paid-tier-only at every version). The
+  real load-balancing test is `lab-integration`'s Layer 3 harness. Full coverage
+  breakdown: [`docs/fidelity-matrix.md`](docs/fidelity-matrix.md).
 
 Local wiring is a committed `providers.tf` per stack (an `endpoints {}` block at
 `http://127.0.0.1:4566` with dummy creds); every other `.tf` is valid against

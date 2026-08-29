@@ -13,3 +13,10 @@ and tested end to end. Copyable template. See
 make up NO_TOKEN=1 && make sample-deploy && make sample-test
 make sample-destroy
 ```
+
+## Free-tier scope
+
+The free (community) tier is **API Gateway REST v1 only**. HTTP API v2, WebSocket
+API, Cognito-authorizer, and AppSync samples require a **paid** LocalStack tier -
+all return `501` on the community image. See
+[`../docs/fidelity-matrix.md`](../docs/fidelity-matrix.md).
