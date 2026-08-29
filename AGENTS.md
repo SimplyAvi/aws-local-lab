@@ -45,6 +45,26 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - If host port 4566 is busy (parallel lab instances), pass `EDGE_PORT=<port>`
   to every `make` target; in-network clients always use `aws-local-lab:4566`.
 
+## Terraform (FR-2, `lab-terraform`)
+
+- Stacks in `terraform/` - full guide in [`terraform/README.md`](terraform/README.md).
+  Root modules `foundation/` (VPC/subnets/IGW/SGs) and `system-design/`
+  (ALB+ECS+AutoScaling); shared code in `terraform/modules/`.
+- Local wiring is a committed `providers.tf` per root module (an `endpoints {}`
+  block, dummy creds), NOT `tflocal` - rationale in `terraform/README.md`. Every
+  other `.tf` stays real-AWS valid. Endpoint default is `127.0.0.1:4566`
+  (`localhost` -> `::1` fails against LocalStack).
+- Pinned: Terraform `1.5.7` (in `terraform/.bin/` via `make tf-install`),
+  `hashicorp/aws` `5.83.1` (locked, multi-platform).
+- **`elbv2` / `elb` / `ecs` / `autoscaling` / `application-autoscaling` are
+  LocalStack Pro-only at every version.** `foundation` applies/destroys on the
+  no-token image; `system-design` only `validate`s + `plan`s there and needs Pro
+  or real AWS to `apply`. Do not "fix" this by rescoping - it is documented.
+- Make targets (below the sibling marker): `tf-install`, `tf-validate`,
+  `tf-fmt-check`, `tf-foundation-apply`/`-destroy`,
+  `tf-system-design-apply`/`-destroy`, `tf-plan-all`, `tf-destroy-all`.
+- Keep `terraform fmt -check -recursive` and `terraform validate` clean.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

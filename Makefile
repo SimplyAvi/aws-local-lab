@@ -144,3 +144,61 @@ lab-restore: ## FR-4: restore the named volume from $(SNAPSHOT_DIR)/$(SNAPSHOT_N
 		sh -c "rm -rf /data/* && tar xzf /backup/$(SNAPSHOT_NAME).tgz -C /data"
 	@$(COMPOSE) start localstack >/dev/null 2>&1 || true
 	@echo "restored from $(SNAPSHOT_DIR)/$(SNAPSHOT_NAME).tgz"
+
+# ----------------------------------------------------------------------
+# lab-terraform (FR-2): tflocal-style provider wiring + foundation and
+# system-design stacks. Full docs in terraform/README.md.
+# ----------------------------------------------------------------------
+TF_VERSION    ?= 1.5.7
+TF_DIR        := terraform
+TF_LOCAL_BIN  := $(TF_DIR)/.bin/terraform
+TF            := $(shell [ -x "$(TF_LOCAL_BIN)" ] && echo "$(TF_LOCAL_BIN)" || command -v terraform)
+TF_FOUNDATION := $(TF_DIR)/foundation
+TF_SYSDESIGN  := $(TF_DIR)/system-design
+export TF_VERSION
+
+.PHONY: tf-install tf-foundation-apply tf-foundation-destroy \
+        tf-system-design-apply tf-system-design-destroy \
+        tf-plan-all tf-destroy-all tf-validate tf-fmt-check
+
+tf-install: ## Install pinned terraform into terraform/.bin (tflocal not used - see terraform/README.md)
+	@./$(TF_DIR)/scripts/tf-install.sh
+
+tf-validate: ## terraform validate every root module
+	@for d in $(TF_FOUNDATION) $(TF_SYSDESIGN) ; do \
+		echo ">> validate $$d" ; \
+		$(TF) -chdir=$$d init -backend=false -input=false -no-color >/dev/null ; \
+		$(TF) -chdir=$$d validate -no-color || exit 1 ; \
+	done
+
+tf-fmt-check: ## terraform fmt -check across terraform/
+	@$(TF) -chdir=$(TF_DIR) fmt -check -recursive
+
+tf-foundation-apply: ## Apply the foundation stack (VPC / subnets / IGW / SGs)
+	@$(TF) -chdir=$(TF_FOUNDATION) init -input=false -no-color
+	@$(TF) -chdir=$(TF_FOUNDATION) apply -auto-approve -input=false -no-color
+
+tf-foundation-destroy: ## Destroy the foundation stack
+	@$(TF) -chdir=$(TF_FOUNDATION) destroy -auto-approve -input=false -no-color
+
+tf-system-design-apply: ## Apply the system-design stack (ALB / ECS / Auto Scaling - needs LocalStack Pro or real AWS)
+	@$(TF) -chdir=$(TF_SYSDESIGN) init -input=false -no-color
+	@$(TF) -chdir=$(TF_SYSDESIGN) apply -auto-approve -input=false -no-color || { \
+		echo "" ; \
+		echo "  ^ If this failed with HTTP 501 'not included in your current license plan':" ; \
+		echo "    elbv2 / ecs / application-autoscaling are LocalStack Pro-only. This stack" ; \
+		echo "    validates + plans clean but needs LocalStack Pro or real AWS to apply." ; \
+		echo "    See terraform/README.md -> 'Fidelity' and 'Known gaps'." ; \
+		exit 1 ; \
+	}
+
+tf-system-design-destroy: ## Destroy the system-design stack
+	@$(TF) -chdir=$(TF_SYSDESIGN) destroy -auto-approve -input=false -no-color
+
+tf-plan-all: ## Plan both stacks (foundation first, then system-design)
+	@$(TF) -chdir=$(TF_FOUNDATION) init -input=false -no-color
+	@$(TF) -chdir=$(TF_FOUNDATION) plan -input=false -no-color
+	@$(TF) -chdir=$(TF_SYSDESIGN) init -input=false -no-color
+	@$(TF) -chdir=$(TF_SYSDESIGN) plan -input=false -no-color
+
+tf-destroy-all: tf-system-design-destroy tf-foundation-destroy ## Destroy both stacks in dependency order
